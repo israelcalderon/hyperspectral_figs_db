@@ -1,0 +1,2 @@
+mask_path,hs_img_path,black_ref_path,white_ref_path,output_file,class
+"/path/to/masks_file/label.png","/path/to/hs_images/header_file.hdr","/path/to/hs_images/darkref_header_file.hdr","/path/to/hs_images/whiteref_header_file.hdr","/path/to/ouput_file.csv",1

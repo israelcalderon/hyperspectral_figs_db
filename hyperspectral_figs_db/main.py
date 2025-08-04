@@ -1,0 +1,80 @@
+from typing import Optional
+from dotenv import dotenv_values
+import cv2
+import numpy as np
+import pandas as pd
+import spectral
+
+import radiometric_corrections
+import hs_images
+
+
+type Coordinate = tuple[int, int]
+
+
+def mask_image_coordinates(mask_image_path: str) -> list[Coordinate]:
+    """
+    Gets the pixel coordinates in the provided masks
+
+    Note: Expects an image of color masks with black background
+
+    Returns:
+        list: A list of tuples with coordinates in (y, x) or (row, col)
+    """
+    image = cv2.imread(mask_image_path)
+    black = np.array([0, 0, 0])  # This is the only color to filter
+
+    if image is None:
+        raise Exception(f'Not image found in {mask_image_path}')
+    
+    coordinates = np.where(np.all(image != black, axis=-1))
+    return list(zip(coordinates[0], coordinates[1]))
+
+
+def hyperspectral_pixels_from_masks(coordinate_masks: list[Coordinate],
+                                    wavelengths: list[float],
+                                    cube: np.ndarray) -> pd.DataFrame:
+    """
+    Extracts from the hs image cube the pixels defined in the coordinate_masks
+    
+    :param coordinate_masks: List with the positions of each interested pixel
+    :param wavelengths: List of wavelengths for each pixel
+    :param cube: Hyperspectral image cube
+    :return: Data frame with the wavelengts as columns and filtered pixels as rows
+    """
+    pixels_count = len(coordinate_masks)
+
+    hs_pixels = np.zeros((pixels_count, len(wavelengths)))
+    
+    for idx, coord in enumerate(coordinate_masks):
+        pixel = cube[coord[0], coord[1]] # type: ignore
+        hs_pixels[idx] = pixel
+    
+    return pd.DataFrame(hs_pixels, columns=wavelengths)
+
+
+def store_dataframe(pixels: pd.DataFrame,
+                    class_: int, path: str,
+                    header: bool = False) -> None:
+    pixels['class'] = class_
+    pixels.to_csv(path, header=header, index=False, mode='a+')
+
+
+def main() -> None:
+    config = dotenv_values()
+    images_data = hs_images.get_image_locations(config['IMAGES_DATA_FILE'])  # type: ignore
+    
+    for img in images_data:
+        image_hdr = spectral.open_image(img['hs_img_path'])
+        wavelenghts = image_hdr.bands.centers
+        coordinates = mask_image_coordinates(img['mask_path'])
+        hs_cube = radiometric_corrections.black_white_correction(
+            img['hs_img_path'], img['black_ref_path'], img['white_ref_path'])
+        pixels_df = hyperspectral_pixels_from_masks(coordinates,
+                                                    wavelenghts,
+                                                    hs_cube)
+        store_dataframe(pixels_df, img['class'], img['output_file'])
+
+
+if __name__ == '__main__':
+    main()

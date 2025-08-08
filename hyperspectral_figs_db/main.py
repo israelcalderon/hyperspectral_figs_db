@@ -54,26 +54,39 @@ def hyperspectral_pixels_from_masks(coordinate_masks: list[Coordinate],
 
 
 def store_dataframe(pixels: pd.DataFrame,
-                    class_: int, path: str,
+                    class_: int, 
+                    path: str,
                     header: bool = False) -> None:
     pixels['class'] = class_
     pixels.to_csv(path, header=header, index=False, mode='a+')
+
+
+def process_hyperspectral_image(image_data: dict[str, str]) -> None:
+    """
+    Processes a hyperspectral image based on the provided metadata.
+
+    :param image_data: Dictionary containing paths and class information.
+    """
+    image_hdr = spectral.open_image(image_data['hs_img_path'])
+    wavelengths = image_hdr.bands.centers
+    coordinates = mask_image_coordinates(image_data['mask_path'])
+    
+    hs_cube = radiometric_corrections.black_white_correction(
+        image_data['hs_img_path'], 
+        image_data['black_ref_path'], 
+        image_data['white_ref_path']
+    )
+    
+    pixels_df = hyperspectral_pixels_from_masks(coordinates, wavelengths, hs_cube)
+    store_dataframe(pixels_df, image_data['class'], image_data['output_file'], True)
 
 
 def main() -> None:
     config = dotenv_values()
     images_data = hs_images.get_image_locations(config['IMAGES_DATA_FILE'])  # type: ignore
     
-    for img in images_data:
-        image_hdr = spectral.open_image(img['hs_img_path'])
-        wavelenghts = image_hdr.bands.centers
-        coordinates = mask_image_coordinates(img['mask_path'])
-        hs_cube = radiometric_corrections.black_white_correction(
-            img['hs_img_path'], img['black_ref_path'], img['white_ref_path'])
-        pixels_df = hyperspectral_pixels_from_masks(coordinates,
-                                                    wavelenghts,
-                                                    hs_cube)
-        store_dataframe(pixels_df, img['class'], img['output_file'])
+    for image_data in images_data:
+        process_hyperspectral_image(image_data)
 
 
 if __name__ == '__main__':
